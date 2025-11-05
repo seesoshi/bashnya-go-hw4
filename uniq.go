@@ -29,10 +29,9 @@ func processLine(line string, p Params) string {
 			result = ""
 		}
 	}
-
-	// Обработка -s (символы) - ПОЛНОСТЬЮ ПЕРЕПИСАНА
+	// Обработка -s (символы)
 	if p.Num_chars > 0 {
-		if p.Num_chars <= len(result) {
+		if p.Num_chars < len(result) {
 			result = result[p.Num_chars:]
 		} else {
 			result = ""
@@ -47,42 +46,56 @@ func processLine(line string, p Params) string {
 	return result
 }
 
-func countOccurences(lines []string, target string, p Params, start int) int {
-	count := 0
-	for i := start; i < len(lines); i++ {
-		if processLine(lines[i], p) == target {
-			count++
-		}
-	}
-	return count
-}
-
 func uniqLines(lines []string, p Params) []string {
 	if len(lines) == 0 {
 		return nil
 	}
 
+	// Собираем полную статистику
+	type lineInfo struct {
+		count     int
+		firstLine string
+	}
+	groups := make(map[string]*lineInfo)
+
+	for _, line := range lines {
+		key := processLine(line, p)
+		if info, exists := groups[key]; exists {
+			info.count++
+		} else {
+			groups[key] = &lineInfo{
+				count:     1,
+				firstLine: line,
+			}
+		}
+	}
+
 	var result []string
 	seen := make(map[string]bool)
 
-	for i, line := range lines {
-		processed := processLine(line, p)
+	for _, line := range lines {
+		key := processLine(line, p)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 
-		if !seen[processed] {
-			count := countOccurences(lines, processed, p, i)
+		info := groups[key]
 
-			switch {
-			case p.C:
-				result = append(result, fmt.Sprintf("%d %s", count, line))
-			case p.D && count > 1:
-				result = append(result, line)
-			case p.U && count == 1:
-				result = append(result, line)
-			case !p.D && !p.U:
-				result = append(result, line)
+		// Применяем фильтры
+		switch {
+		case p.C:
+			result = append(result, fmt.Sprintf("%d %s", info.count, info.firstLine))
+		case p.D:
+			if info.count > 1 {
+				result = append(result, info.firstLine)
 			}
-
-			seen[processed] = true
+		case p.U:
+			if info.count == 1 {
+				result = append(result, info.firstLine)
+			}
+		default:
+			result = append(result, info.firstLine)
 		}
 	}
 
