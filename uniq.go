@@ -17,69 +17,80 @@ type Params struct {
 	I          bool
 }
 
-func countOccurences(lines []string, s string, p Params, start int) int {
-	var count = 0
+func processLine(line string, p Params) string {
+	result := line
+
+	// Обработка -f (поля)
+	if p.Num_fields > 0 {
+		fields := strings.Fields(result)
+		if p.Num_fields < len(fields) {
+			result = strings.Join(fields[p.Num_fields:], " ")
+		} else {
+			result = ""
+		}
+	}
+
+	// Обработка -s (символы) - ПОЛНОСТЬЮ ПЕРЕПИСАНА
+	if p.Num_chars > 0 {
+		if p.Num_chars <= len(result) {
+			result = result[p.Num_chars:]
+		} else {
+			result = ""
+		}
+	}
+
+	// Обработка -i (регистр)
+	if p.I {
+		result = strings.ToLower(result)
+	}
+
+	return result
+}
+
+func countOccurences(lines []string, target string, p Params, start int) int {
+	count := 0
 	for i := start; i < len(lines); i++ {
-		if checkLines(lines[i], p) == s {
+		if processLine(lines[i], p) == target {
 			count++
 		}
 	}
 	return count
 }
 
-func checkLines(s string, p Params) string {
-	res := s
-	var n = p.Num_fields
-	if n > 0 {
-		fields := strings.Fields(res)
-		if len(fields) > n {
-			res = strings.Join(fields[n:], " ")
-		} else {
-			res = ""
-		}
-	}
-	if p.Num_chars > 0 {
-		if len(res) > p.Num_chars {
-
-			res = res[p.Num_chars:]
-		} else {
-			res = ""
-		}
-	}
-	if p.I {
-		res = strings.ToLower(res)
-	}
-	return res
-}
-
-func checkCDU(lines []string, p Params) []string {
+func uniqLines(lines []string, p Params) []string {
 	if len(lines) == 0 {
 		return nil
-	} else {
-		var res []string
-		pastlines := make(map[string]bool)
-		for i, line := range lines {
-			s := checkLines(line, p)
-			if pastlines[s] == false {
-				count := countOccurences(lines, s, p, i)
-				switch {
-				case p.C:
-					res = append(res, fmt.Sprintf("%d %s", count, line))
-				case p.D && count > 1:
-					res = append(res, line)
-				case p.U && count == 1:
-					res = append(res, line)
-				case p.D == false && p.U == false:
-					res = append(res, line)
-				}
-				pastlines[s] = true
-			}
-		}
-		return res
 	}
+
+	var result []string
+	seen := make(map[string]bool)
+
+	for i, line := range lines {
+		processed := processLine(line, p)
+
+		if !seen[processed] {
+			count := countOccurences(lines, processed, p, i)
+
+			switch {
+			case p.C:
+				result = append(result, fmt.Sprintf("%d %s", count, line))
+			case p.D && count > 1:
+				result = append(result, line)
+			case p.U && count == 1:
+				result = append(result, line)
+			case !p.D && !p.U:
+				result = append(result, line)
+			}
+
+			seen[processed] = true
+		}
+	}
+
+	return result
 }
 
-func checkFiles(p Params, inputfile, outputfile string) error {
+func processFiles(p Params, inputfile, outputfile string) error {
+	// Вход
 	input := os.Stdin
 	if inputfile != "" {
 		file, err := os.Open(inputfile)
@@ -90,6 +101,7 @@ func checkFiles(p Params, inputfile, outputfile string) error {
 		input = file
 	}
 
+	// Чтение
 	scanner := bufio.NewScanner(input)
 	var lines []string
 	for scanner.Scan() {
@@ -98,8 +110,11 @@ func checkFiles(p Params, inputfile, outputfile string) error {
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	result := checkCDU(lines, p)
 
+	// Обработка
+	result := uniqLines(lines, p)
+
+	// Выход
 	output := os.Stdout
 	if outputfile != "" {
 		file, err := os.Create(outputfile)
@@ -110,6 +125,7 @@ func checkFiles(p Params, inputfile, outputfile string) error {
 		output = file
 	}
 
+	// Запись
 	for _, line := range result {
 		fmt.Fprintln(output, line)
 	}
@@ -130,27 +146,26 @@ func main() {
 	flag.Parse()
 
 	if (params.C && params.D) || (params.D && params.U) || (params.C && params.U) {
-		fmt.Println("Параметры -c -d -u взаимнозаменяемы, нет смысла использовать их параллельно")
+		fmt.Fprintln(os.Stderr, "Параметры -c -d -u взаимнозаменяемы, нет смысла использовать их параллельно")
+		os.Exit(1)
 	}
 
-	data := flag.Args()
-
+	args := flag.Args()
 	var inputfile, outputfile string
 
-	if len(data) > 0 {
-		inputfile = data[0]
+	if len(args) > 0 {
+		inputfile = args[0]
 	}
-	if len(data) > 1 {
-		outputfile = data[1]
+	if len(args) > 1 {
+		outputfile = args[1]
 	}
-	if len(data) > 2 {
+	if len(args) > 2 {
 		fmt.Fprintln(os.Stderr, "слишком много аргументов")
 		os.Exit(1)
 	}
 
-	if err := checkFiles(params, inputfile, outputfile); err != nil {
+	if err := processFiles(params, inputfile, outputfile); err != nil {
 		fmt.Fprintln(os.Stderr, "Ошибка:", err)
 		os.Exit(1)
 	}
-
 }
