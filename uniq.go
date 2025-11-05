@@ -42,6 +42,8 @@ func checkLines(s string, p Params) string {
 		if len(res) < p.Num_chars {
 
 			res = res[p.Num_chars:]
+		} else {
+			res = ""
 		}
 	}
 	if p.I {
